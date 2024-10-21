@@ -1,0 +1,37 @@
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: dummy-ds
+  labels:
+    k8s-app: dummy-ds
+    version: v1
+spec:
+  selector:
+    matchLabels:
+      k8s-app: dummy-ds
+  template:
+    metadata:
+      labels:
+        k8s-app: dummy-ds
+        version: v1
+    spec:
+      containers:
+        - name: dummy-ds
+          image: ubuntu:latest
+          command: ["sleep"]
+          args: ["infinity"]
+          volumeMounts:
+            - mountPath: "/mount-test"
+              name: local-storage
+      volumes:
+        - name: local-storage
+          persistentVolumeClaim:
+            claimName: local-claim
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule

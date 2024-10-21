@@ -1,0 +1,77 @@
+# deploy/daemonset.yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: my-csi-node
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: my-csi-node
+  template:
+    metadata:
+      labels:
+        app: my-csi-node
+    spec:
+      hostNetwork: true # Depending on your CSI driver's requirements
+      initContainers:
+        - name: socket-dir-init
+          image: alpine
+          command:
+            ["mkdir", "-p", "/var/lib/kubelet/plugins/example.csi/driver"]
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /var/lib/kubelet/plugins/example.csi/driver
+      containers:
+        - name: csi-node-driver
+          image: adelhajhassan918/example.csi.driver:muti.v.1.0.0
+          securityContext:
+            privileged: true
+          args:
+            - /my-csi-driver
+            # Additional arguments here
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /var/lib/kubelet/plugins/example.csi/driver
+            - name: dd-tmp
+              mountPath: /tmp/datadog
+            - mountPath: /var/lib/kubelet/pods
+              mountPropagation: Bidirectional
+              name: mountpoint-dir
+          env:
+            - name: NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+        - name: csi-node-driver-registrar
+          image: k8s.gcr.io/sig-storage/csi-node-driver-registrar:v2.0.1
+          args:
+            - "--csi-address=$(ADDRESS)"
+            - "--kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)"
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock # Update this with the path to your CSI driver's socket
+            - name: DRIVER_REG_SOCK_PATH
+              value: /var/lib/kubelet/plugins/example.csi/driver/csi.sock # Update this with your desired registration path
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi # Match this to ADDRESS
+            - name: registration-dir
+              mountPath: /registration # This is where the registrar writes the registration information
+      volumes:
+        - name: plugin-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins/example.csi/driver
+            type: DirectoryOrCreate
+        - name: dd-tmp
+          hostPath:
+            path: /tmp/datadog
+            type: DirectoryOrCreate
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry # This is a standard path, so it typically doesn't need changes
+            type: Directory
+        - hostPath:
+            path: /var/lib/kubelet/pods
+            type: DirectoryOrCreate
+          name: mountpoint-dir
