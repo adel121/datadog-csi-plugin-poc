@@ -107,7 +107,7 @@ spec:
               subPath: opt/datadog-packages/datadog-apm-inject
       containers:
         - name: csi-node-driver
-          image: adelhajhassan918/example.csi.driver:muti.v.1.0.0 #adelhajhassan918/dd-csi-plugin:v20
+          image: adelhajhassan918/dd-csi-plugin:v20
           securityContext:
             privileged: true
           args:
