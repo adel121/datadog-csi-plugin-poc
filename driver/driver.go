@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"path"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/spf13/afero"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/klog"
@@ -15,11 +18,13 @@ import (
 type nodeServer struct {
 	csi.UnimplementedNodeServer
 	mounter mount.Interface
+	fs      afero.Afero
 }
 
 func NewNodeServer() *nodeServer {
 	return &nodeServer{
 		mounter: mount.New(""),
+		fs:      afero.Afero{Fs: afero.NewOsFs()},
 	}
 }
 
@@ -55,32 +60,21 @@ func (ns *nodeServer) NodePublishVolume(
 
 	klog.Infof("target Path = %q", targetPath)
 
-	// Check if the target path exists. Create if not present.
-	_, err := os.Lstat(targetPath)
-	if os.IsNotExist(err) {
-		if err = makeFile(targetPath); err != nil {
-			return nil, fmt.Errorf("failed to create target path: %w", err)
-		}
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to check if the target block file exists: %w", err)
-	}
-
+	// Paths for OverlayFS
 	datadogDir := "/tmp/datadog"
 
-	klog.Infof("Checking if directory %s exists", datadogDir)
-	if _, err := os.Stat(datadogDir); os.IsNotExist(err) {
-		klog.Infof("Directory %s does not exist, creating...", datadogDir)
-		if err := os.MkdirAll(datadogDir, 0755); err != nil {
-			klog.Errorf("Failed to create directory %s: %v", datadogDir, err)
-			return nil, status.Errorf(codes.Internal, "Cannot create directory: %v", err)
+	// Include volumeID in paths to ensure they are unique per volume
+	volumeUniqueDir := fmt.Sprintf("/var/lib/csi/overlay/%s", volumeID)
+	upperDir := path.Join(volumeUniqueDir, "upper")
+	workDir := path.Join(volumeUniqueDir, "work")
+	mappedDir := path.Join(volumeUniqueDir, "mapped")
+
+	// Ensure all directories exist
+	dirs := []string{datadogDir, upperDir, workDir, targetPath, mappedDir}
+	for _, dir := range dirs {
+		if err := makeFile(ns.fs, dir); err != nil {
+			return nil, fmt.Errorf("failed to create required directory %q: %w", dir, err)
 		}
-		klog.Infof("Successfully created directory %s", datadogDir)
-	} else if err != nil {
-		klog.Errorf("Error checking directory %s: %v", datadogDir, err)
-		return nil, status.Errorf(codes.Internal, "Error checking directory: %v", err)
-	} else {
-		klog.Infof("Directory %s already exists", datadogDir)
 	}
 
 	notMnt, err := ns.mounter.IsLikelyNotMountPoint(targetPath)
@@ -89,9 +83,25 @@ func (ns *nodeServer) NodePublishVolume(
 	}
 
 	if notMnt {
-		if err := ns.mounter.Mount(datadogDir, targetPath, "", []string{"bind"}); err != nil {
-			klog.Errorf("Failed to mount %q to %q: %v", datadogDir, targetPath, err)
+		opts := []string{
+			"lowerdir=" + datadogDir,
+			"upperdir=" + upperDir,
+			"workdir=" + workDir,
+		}
+
+		if err := ns.mounter.Mount("overlay", mappedDir, "overlay", opts); err != nil {
+			klog.Errorf("Failed to mount overlay %q to %q: %v", datadogDir, mappedDir, err)
 			return nil, status.Errorf(codes.Internal, "Failed to mount: %v", err)
+		}
+
+		if err := ns.mounter.Mount(mappedDir, targetPath, "", []string{"bind"}); err != nil {
+			klog.Errorf("Failed to bind mount %q to %q: %v", mappedDir, targetPath, err)
+			return nil, status.Errorf(codes.Internal, "Failed to mount: %v", err)
+		}
+
+		if err := RecursiveChmod(datadogDir, "777"); err != nil {
+			klog.Errorf("Failed to set write permissions for directory %s: %v", targetPath, err)
+			return nil, status.Errorf(codes.Internal, "Failed to set write permissions: %v", err)
 		}
 	}
 
@@ -141,21 +151,35 @@ func (ns *nodeServer) NodeUnpublishVolume(
 
 // makeFile ensures that the file exists, creating it if necessary.
 // The parent directory must exist.
-func makeFile(pathname string) error {
+func makeFile(fs afero.Afero, pathname string) error {
 	klog.Infof("Checking if directory %s exists", pathname)
 	if _, err := os.Stat(pathname); os.IsNotExist(err) {
 		klog.Infof("Directory %s does not exist, creating...", pathname)
-		if err := os.MkdirAll(pathname, 0755); err != nil {
+		if err := fs.MkdirAll(pathname, os.ModePerm); err != nil {
 			klog.Errorf("Failed to create directory %s: %v", pathname, err)
 			return status.Errorf(codes.Internal, "Cannot create directory: %v", err)
 		}
-		klog.Infof("Successfully created directory %s", pathname)
+		// Setting permissions again in case umask interfered
+		if err := fs.Chmod(pathname, os.ModePerm); err != nil {
+			klog.Errorf("Failed to set permissions for directory %s: %v", pathname, err)
+			return status.Errorf(codes.Internal, "Cannot set permissions: %v", err)
+		}
+		klog.Infof("Successfully created and set permissions for directory %s", pathname)
 	} else if err != nil {
 		klog.Errorf("Error checking directory %s: %v", pathname, err)
 		return status.Errorf(codes.Internal, "Error checking directory: %v", err)
 	} else {
 		klog.Infof("Directory %s already exists", pathname)
 	}
+	return nil
+}
 
+// RecursiveChmod uses the system 'chmod' command to change permissions recursively.
+func RecursiveChmod(path string, mode string) error {
+	cmd := exec.Command("chmod", "-R", mode, path)
+	err := cmd.Run() // Runs the command and waits for it to complete
+	if err != nil {
+		return err
+	}
 	return nil
 }

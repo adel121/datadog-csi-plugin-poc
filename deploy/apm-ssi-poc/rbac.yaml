@@ -2,14 +2,14 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: my-csi-driver
+  name: dd-csi-driver
   namespace: kube-system
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: my-csi-driver-role
+  name: dd-csi-driver-role
 rules:
   - apiGroups: [""]
     resources: ["nodes"]
@@ -20,12 +20,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: my-csi-driver-role-binding
+  name: dd-csi-driver-role-binding
 subjects:
   - kind: ServiceAccount
-    name: my-csi-driver
+    name: dd-csi-driver
     namespace: kube-system
 roleRef:
   kind: ClusterRole
-  name: my-csi-driver-role
+  name: dd-csi-driver-role
   apiGroup: rbac.authorization.k8s.io

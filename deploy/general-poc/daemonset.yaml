@@ -2,39 +2,32 @@
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: my-csi-node
+  name: dd-csi-node-server
   namespace: kube-system
 spec:
   selector:
     matchLabels:
-      app: my-csi-node
+      app: dd-csi-node-server
   template:
     metadata:
       labels:
-        app: my-csi-node
+        app: dd-csi-node-server
     spec:
       hostNetwork: true # Depending on your CSI driver's requirements
-      initContainers:
-        - name: socket-dir-init
-          image: alpine
-          command:
-            ["mkdir", "-p", "/var/lib/kubelet/plugins/example.csi/driver"]
-          volumeMounts:
-            - name: plugin-dir
-              mountPath: /var/lib/kubelet/plugins/example.csi/driver
       containers:
         - name: csi-node-driver
-          image: adelhajhassan918/example.csi.driver:muti.v.1.0.0
+          image: adelhajhassan918/example.csi.driver:muti.v.1.0.0 #adelhajhassan918/dd-csi-plugin:v20
           securityContext:
             privileged: true
           args:
-            - /my-csi-driver
-            # Additional arguments here
+            - /dd-csi-driver
           volumeMounts:
             - name: plugin-dir
               mountPath: /var/lib/kubelet/plugins/example.csi/driver
-            - name: dd-tmp
+            - name: datadog-auto-instrumentation
               mountPath: /tmp/datadog
+            - name: overlay-dir
+              mountPath: /var/lib/csi/overlay
             - mountPath: /var/lib/kubelet/pods
               mountPropagation: Bidirectional
               name: mountpoint-dir
@@ -63,9 +56,13 @@ spec:
           hostPath:
             path: /var/lib/kubelet/plugins/example.csi/driver
             type: DirectoryOrCreate
-        - name: dd-tmp
+        - name: datadog-auto-instrumentation
           hostPath:
-            path: /tmp/datadog
+            path: /tmp/datadog-apm
+            type: DirectoryOrCreate
+        - name: overlay-dir
+          hostPath:
+            path: /var/lib/csi/overlay
             type: DirectoryOrCreate
         - name: registration-dir
           hostPath:

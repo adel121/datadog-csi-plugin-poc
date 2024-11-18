@@ -2,7 +2,7 @@
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: my-csi-storageclass
+  name: dd-csi-storageclass
 provisioner: example.csi.driver
 volumeBindingMode: WaitForFirstConsumer
 reclaimPolicy: Retain

@@ -8,3 +8,4 @@ spec:
   podInfoOnMount: true
   volumeLifecycleModes:
     - Persistent
+    - Ephemeral

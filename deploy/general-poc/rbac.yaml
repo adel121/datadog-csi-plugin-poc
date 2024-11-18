@@ -1,0 +1,31 @@
+# deploy/rbac.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dd-csi-driver
+  namespace: kube-system
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dd-csi-driver-role
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  # Add more rules as necessary for your driver
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dd-csi-driver-role-binding
+subjects:
+  - kind: ServiceAccount
+    name: dd-csi-driver
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: dd-csi-driver-role
+  apiGroup: rbac.authorization.k8s.io

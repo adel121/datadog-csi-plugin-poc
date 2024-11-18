@@ -1,0 +1,23 @@
+datadog:
+  apiKeyExistingSecret: datadog-secret
+  appKeyExistingSecret: datadog-secret
+  kubelet:
+    tlsVerify: false
+
+  apm:
+    instrumentation:
+      enabled: true
+      enabledNamespaces:
+        - default
+
+clusterAgent:
+  enabled: true
+  replicas: 1
+  image:
+    repository: adelhajhassan918/dca-csi-poc
+    tag: v2-arm
+    imagePullPolicy: IfNotPresent
+    doNotCheckTag: true
+
+  admissionController:
+    mutateUnlabelled: true
