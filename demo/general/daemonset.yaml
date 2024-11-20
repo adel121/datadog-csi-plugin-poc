@@ -22,16 +22,10 @@ spec:
           command: ["sleep"]
           args: ["infinity"]
           volumeMounts:
-            - mountPath: "/mount-test"
-              name: local-storage
+            - mountPath: /data-mount
+              name: dd-csi-volume
       volumes:
-        - name: local-storage
-          persistentVolumeClaim:
-            claimName: local-claim
-      tolerations:
-        - key: node-role.kubernetes.io/master
-          operator: Exists
-          effect: NoSchedule
-        - key: node-role.kubernetes.io/control-plane
-          operator: Exists
-          effect: NoSchedule
+        - name: dd-csi-volume
+          csi:
+            driver: example.csi.driver
+            readOnly: false
