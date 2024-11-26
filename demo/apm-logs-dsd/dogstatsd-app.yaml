@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: datadogpy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: datadogpy
+  template:
+    metadata:
+      labels:
+        app: datadogpy
+        admission.datadoghq.com/enabled: "true"
+    spec:
+      containers:
+        - name: datadogpy
+          image: adelhajhassan918/datadogpy-uds-udp
+          imagePullPolicy: Always
+          env:
+            - name: USER
+              value: "adel"

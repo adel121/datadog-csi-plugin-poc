@@ -14,7 +14,7 @@ type identityServer struct {
 // GetPluginInfo returns metadata about the plugin
 func (is *identityServer) GetPluginInfo(ctx context.Context, req *csi.GetPluginInfoRequest) (*csi.GetPluginInfoResponse, error) {
 	return &csi.GetPluginInfoResponse{
-		Name:          "example.csi.driver",
+		Name:          "datadog.poc.csi.driver",
 		VendorVersion: "v1.0.0",
 	}, nil
 }

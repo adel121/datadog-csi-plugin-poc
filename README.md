@@ -138,3 +138,130 @@ kubectl apply -f ./demo/apm-ssi/python-app.yaml
 ```
 6. Verify that APM python traces are generated in the Datadog UI
 ![alt text](./media/traces.png)
+
+### Dogstatsd and Logs Agent Demo
+
+This demo includes a CSI Node Server implementation which leverages CSI plugin capability and DCA's admission controller to minimise pod startup time for pods instrumented with APM SSI.
+
+It also leverages the CSI and the admission controller to replace injected hostpath volumes by datadog csi volumes in order to enable dogstatsd communication / apm tracing via uds socket.
+
+The CSI Node Server will install and setup APM tracing libraries on each host, and will mount the APM directory from the host using overlayFS to allow write access in isolation across pods.
+
+The DCA admission controller will use CSI volumes whenever possible to avoid injecting hostpath volumes.
+
+Here are the steps to try this out:
+
+1. Create a kubernetes cluster (or connect to an existing one):
+```
+minikube start --nodes 3
+```
+
+2. Pull the modified helm chart
+
+The POC helm chart can be found [here](https://github.com/DataDog/helm-charts/pull/1617).
+
+Pull the repository, cd into it, and pull the diff with `gh pr checkout 1617`.
+
+3. Create datadog secret
+
+`kubectl create secret generic datadog-secret --from-literal api-key=$DD_API_KEY --from-literal app-key=$DD_APP_KEY`
+
+4. Set the clusterName field in ./chart/datadog/values-override.yaml
+
+For example: `clusterName: adel-full-csi-poc`
+
+5. Install the chart in the cluster
+
+```helm install -f ./charts/datadog/values.yaml -f ./charts/datadog/values-override.yaml datadog-agent ./charts/datadog```
+
+6. Verify that the agents and csi node server pods are running
+
+```
+kubectl get pods -n kube-system -l=app=dd-csi-node-server
+NAME                       READY   STATUS    RESTARTS   AGE
+dd-csi-node-server-gbwxk   2/2     Running   0          2m29s
+dd-csi-node-server-k7scp   2/2     Running   0          2m29s
+dd-csi-node-server-l8qdm   2/2     Running   0          2m29s
+
+kubectl get pods  --watch
+NAME                                           READY   STATUS    RESTARTS   AGE
+datadog-agent-8g2d5                            3/3     Running   0          3m22s
+datadog-agent-cluster-agent-8656dd89d6-c29ph   1/1     Running   0          3m22s
+datadog-agent-cwj4b                            3/3     Running   0          3m22s
+datadog-agent-dlvwd                            3/3     Running   0          3m22s
+```
+
+It might take some time for the agent pods to become in the running state because initially the csi node server needs to pull the APM SSI libraries and get started first, and then the agents can start.
+
+This is because the agents mount CSI volumes for logs agent and UDS sockets, so if the CSI node server is not yet ready to serve their requests, the kubelet will follow a retry mechanism with increasing delay until the volume mounting request succeeds.
+
+We accept this behaviour in this POC, but in a production level implementatino we need a more optimised setup that doesn't deploy the agent if the CSI Node Server is not yet ready to serve requests.
+
+7. Deploy a sample Dogstatsd App and Dummy Python App
+
+```
+kubectl apply -f ./demo/apm-logs-dsd
+```
+
+Notice that the created pods only have 1 injected init container:
+```
+datadogpy-5b7d9c6f8f-79xt9                     0/1     Init:0/1   0          4s
+dummy-python-app-7f5b4d6fc6-cmfj8              0/1     Init:0/1   0          4s
+dummy-python-app-7f5b4d6fc6-jjsml              0/1     Init:0/1   0          4s
+datadogpy-5b7d9c6f8f-79xt9                     0/1     PodInitializing   0          5s
+dummy-python-app-7f5b4d6fc6-jjsml              0/1     PodInitializing   0          5s
+dummy-python-app-7f5b4d6fc6-cmfj8              0/1     PodInitializing   0          5s
+```
+
+Check that the volumes injected in the pods via the admission controller are csi volumes and not hostpath volumes. For examples, here is the volumes section in the dogstatsd pod:
+```
+volumes:
+  - name: kube-api-access-2pfw8
+    projected:
+      defaultMode: 420
+      sources:
+      - serviceAccountToken:
+          expirationSeconds: 3607
+          path: token
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: kube-root-ca.crt
+      - downwardAPI:
+          items:
+          - fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+            path: namespace
+  - csi:
+      driver: datadog.poc.csi.driver
+      volumeAttributes:
+        path: /var/run/datadog/dsd.socket
+        type: socket
+    name: datadog-dogstatsd
+  - csi:
+      driver: datadog.poc.csi.driver
+      volumeAttributes:
+        type: apm
+    name: datadog-auto-instrumentation
+  - emptyDir: {}
+    name: datadog-auto-instrumentation-etc
+  - csi:
+      driver: datadog.poc.csi.driver
+      volumeAttributes:
+        path: /var/run/datadog/apm.socket
+        type: socket
+    name: datadog-trace-agent
+```
+
+8. Verify that you are getting the dogstatsd metrics
+
+![alt text](./media/full-csi/dsd.png)
+
+9. Verify that you are getting APM traces for the python app
+![alt text](./media/full-csi/traces.png)
+
+10. Verify we are getting logs
+
+![alt text](./media/full-csi/logs.png)

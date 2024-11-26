@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dummy-python-app
+  labels:
+    app: dummy-python-app
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dummy-python-app
+  template:
+    metadata:
+      labels:
+        app: dummy-python-app
+    spec:
+      containers:
+        - name: python-container
+          image: ddkverhoog/django-helloworld:v1.0.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 18080
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 18080
+            initialDelaySeconds: 3
+            periodSeconds: 3
